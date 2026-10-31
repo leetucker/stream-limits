@@ -88,6 +88,8 @@ EOF
 
 
 def _fake_qstat(tmp_path, monkeypatch, mem="16gb", vmem="32gb", script=None):
+    if sys.platform == "win32":
+        pytest.skip("the fake qstat is a shell script")
     exe = tmp_path / "bin" / "qstat"
     exe.parent.mkdir(exist_ok=True)
     exe.write_text(script or QSTAT.format(mem=mem, vmem=vmem))
@@ -267,15 +269,24 @@ def _run(code, **env):
                           capture_output=True, text=True, timeout=300)
 
 
+# (the last number is BLAS's threads, or "none" where threadpoolctl sees no library, as with
+# the Accelerate that NumPy uses on macOS)
 COUNT = ("import polars as pl, numba, pyarrow as pa, threadpoolctl as t;"
+         "b = [d['num_threads'] for d in t.threadpool_info()];"
          "print(pl.thread_pool_size(), numba.get_num_threads(), pa.cpu_count(),"
-         "max(d['num_threads'] for d in t.threadpool_info()))")
+         "max(b) if b else 'none')")
+
+
+def _capped(out, n):
+    """The probe's four numbers are all `n` (BLAS's may be absent)."""
+    got = out.stdout.split()
+    assert got[:3] == [str(n)] * 3 and got[3] in (str(n), "none"), (out.stdout, out.stderr)
 
 
 @pytest.mark.parametrize("env", [{"STREAM_LIMITS_MAX_THREADS": "2"}, {"PBS_NCPUS": "2"}])
 def test_apply_scheduler_defaults_caps_every_library(env):
     out = _run("import stream_limits as s; s.apply_scheduler_defaults();" + COUNT, **env)
-    assert out.stdout.split() == ["2", "2", "2", "2"], out.stderr
+    _capped(out, 2)
 
 
 @has_affinity
@@ -395,6 +406,7 @@ print(s.peak_rss_gb())
 '''
 
 
+@linux_only      # the peak-memory counter can be reset only on Linux
 @needs_polars2
 def test_the_budget_bounds_a_streaming_sort():
     free = float(_run(SORT.replace("sys.argv[1]", "'none'")).stdout.split()[-1])
@@ -426,7 +438,7 @@ def test_set_limits_without_values_uses_the_jobs_allocation():
                PBS_NCPUS="2", STREAM_LIMITS_MEMORY_GB="9")
     lines = out.stdout.strip().splitlines()
     assert lines[-2] == "['memory', 'threads']", (out.stdout, out.stderr)
-    assert lines[-1].split() == ["2", "2", "2", "2"], out.stderr
+    assert lines[-1].split()[:3] == ["2", "2", "2"], out.stderr
 
 
 @has_affinity

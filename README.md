@@ -107,7 +107,8 @@ pip install stream-limits            # nothing else is installed
 pip install "stream-limits[blas]"    # threadpoolctl, to limit BLAS after NumPy is loaded
 ```
 
-Linux and macOS are tested, on Python 3.10 to 3.15. On Windows the module imports and applies thread
-limits, but it detects no scheduler or cgroup and cannot read peak memory; that is untested.
+Linux and macOS are tested on Python 3.10 to 3.15, Windows on 3.10 and 3.14. On Windows the module imports
+and applies thread limits, but it detects no cgroup and cannot read peak memory. On macOS, NumPy's Apple
+Accelerate BLAS is limited only by `VECLIB_MAXIMUM_THREADS` before NumPy is imported (threadpoolctl cannot see it).
 
 MIT licence.

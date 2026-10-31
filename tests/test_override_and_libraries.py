@@ -118,13 +118,25 @@ def test_numba_is_only_lowered_unless_override():
 def test_blas_is_only_lowered_unless_override():
     out = _run(
         "import numpy, threadpoolctl as t, stream_limits as s\n"
+        "found = [d for d in t.threadpool_info() if d['user_api'] == 'blas']\n"
+        "if not found: print('none'); raise SystemExit\n"
         "blas = lambda: max(d['num_threads'] for d in t.threadpool_info() if d['user_api'] == 'blas')\n"
         "for lib in t.ThreadpoolController().lib_controllers:\n"
         "    if lib.user_api == 'blas': lib.set_num_threads(1)\n"
         "s.limit_threads(4); a = blas()\n"
         "s.limit_threads(4, override=True); b = blas(); print(a, b)")
+    if out.stdout.strip() == "none":
+        pytest.skip("threadpoolctl sees no BLAS here (Apple's Accelerate, for one)")
     a, b = map(int, out.stdout.split())
     assert a == 1 and b == 4, out.stderr
+
+
+def test_the_blas_is_not_reported_lowered_when_there_is_none(monkeypatch):
+    import threadpoolctl
+    monkeypatch.setitem(sys.modules, "numpy", types.SimpleNamespace())
+    monkeypatch.setattr(threadpoolctl, "ThreadpoolController",
+                        lambda: types.SimpleNamespace(lib_controllers=[]))
+    assert "blas" not in sl.limit_threads(2, environ={})["lowered"]
 
 
 def test_pyarrow_is_only_lowered_unless_override():

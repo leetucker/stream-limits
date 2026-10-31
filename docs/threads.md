@@ -11,6 +11,7 @@ threads and be killed for it.
 | Polars | **No**: the pool is sized once, at import | sets `POLARS_MAX_THREADS` (before import); warns if too late |
 | numba | down, never above `NUMBA_NUM_THREADS` at import | sets the variable; lowers `set_num_threads` |
 | BLAS (NumPy, SciPy) | yes, through `threadpoolctl` | sets `OMP_`/`OPENBLAS_`/`MKL_NUM_THREADS`; `threadpool_limits` |
+| Apple Accelerate (NumPy on macOS) | **No**: `threadpoolctl` cannot see it | sets `VECLIB_MAXIMUM_THREADS` (before NumPy is imported) |
 | pyarrow | yes | `set_cpu_count`, `set_io_thread_count` |
 | numexpr, PyTorch | yes | `NUMEXPR_NUM_THREADS`/`_MAX_THREADS` (before import); `set_num_threads` |
 | OpenMP programs, TensorFlow, rayon, joblib, Julia | by environment variable, before they start | `OMP_THREAD_LIMIT`, `TF_NUM_*_THREADS`, `RAYON_NUM_THREADS`, `LOKY_MAX_CPU_COUNT`, `JULIA_NUM_THREADS` |

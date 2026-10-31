@@ -558,10 +558,15 @@ def limit_threads(n: int | None = None, *, override: bool = False, environ=None,
     if "numpy" in sys.modules:
         try:
             from threadpoolctl import ThreadpoolController
+            found = False
             for lib in ThreadpoolController().lib_controllers:
                 if lib.user_api == "blas":
                     lib.set_num_threads(_ceiling(n, lib.num_threads, override))
-            report["lowered"].append("blas")
+                    found = True
+            # threadpoolctl sees OpenBLAS, MKL, BLIS and FlexiBLAS; not Apple's Accelerate,
+            # which only VECLIB_MAXIMUM_THREADS (before NumPy is imported) limits
+            if found:
+                report["lowered"].append("blas")
         except ImportError:
             pass
     pa = sys.modules.get("pyarrow")

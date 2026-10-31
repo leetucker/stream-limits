@@ -14,6 +14,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         python: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        include:
+          # Windows has no cgroups, CPU affinity or /proc, so most of the detection is
+          # skipped there; the oldest and newest Python check that everything still imports,
+          # applies thread limits, and degrades without errors.
+          - {os: windows-latest, python: "3.10"}
+          - {os: windows-latest, python: "3.14"}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
