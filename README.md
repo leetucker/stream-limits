@@ -40,7 +40,7 @@ table below (numexpr, PyTorch, OpenMP programs, TensorFlow, rayon, joblib, Julia
 
 | Library | Can it be capped after import? | What `limit_threads` does |
 |---|---|---|
-| Polars | **No**: the pool is sized once, at import | sets `POLARS_MAX_THREADS` (before import); warns if too late |
+| Polars | **No**: the pool is sized once, at import (Polars 1.37: at first use) | sets `POLARS_MAX_THREADS` (before import); warns if too late |
 | numba | down, never above `NUMBA_NUM_THREADS` at import | sets the variable; lowers `set_num_threads` |
 | BLAS (NumPy, SciPy) | yes, through `threadpoolctl` | sets `OMP_`/`OPENBLAS_`/`MKL_NUM_THREADS`; `threadpool_limits` |
 | pyarrow | yes | `set_cpu_count`, `set_io_thread_count` |
@@ -67,8 +67,8 @@ table below (numexpr, PyTorch, OpenMP programs, TensorFlow, rayon, joblib, Julia
   (default 15%, `STREAM_LIMITS_MEMORY_RESERVE`) for what the code does not model, less what the
   process holds now. Ask whether your exact allocation fits, not whether it is under a fixed
   fraction of the machine.
-- `peak_rss_gb()` / `reset_peak_rss()` read the kernel's own high-water mark (Linux): free, no
-  polling.
+- `peak_rss_gb()` / `reset_peak_rss()` read the system's own high-water mark (Linux, macOS and
+  Windows): free, no polling.
 
 `set_limits` is `limit_threads` and `limit_memory` in one call: values you give are applied, values you
 leave out are the job's allocation if one is found and nothing otherwise. The two remain, for their
@@ -107,8 +107,9 @@ pip install stream-limits            # nothing else is installed
 pip install "stream-limits[blas]"    # threadpoolctl, to limit BLAS after NumPy is loaded
 ```
 
-Linux and macOS are tested on Python 3.10 to 3.15, Windows on 3.10 and 3.14. On Windows the module imports
-and applies thread limits, but it detects no cgroup and cannot read peak memory. On macOS, NumPy's Apple
+Linux and macOS are tested on Python 3.10 to 3.15, Windows on 3.10 and 3.14. On Windows the module imports,
+applies thread limits and reads memory use (peak and current working set), but it detects no cgroup;
+macOS and Windows report a lifetime peak, as their counters cannot be reset. On macOS, NumPy's Apple
 Accelerate BLAS is limited only by `VECLIB_MAXIMUM_THREADS` before NumPy is imported (threadpoolctl cannot see it).
 
 MIT licence.

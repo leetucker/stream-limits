@@ -8,7 +8,7 @@ threads and be killed for it.
 
 | Library | Can it be capped after import? | What `limit_threads` does |
 |---|---|---|
-| Polars | **No**: the pool is sized once, at import | sets `POLARS_MAX_THREADS` (before import); warns if too late |
+| Polars | **No**: the pool is sized once, at import (Polars 1.37: at first use) | sets `POLARS_MAX_THREADS` (before import); warns if too late |
 | numba | down, never above `NUMBA_NUM_THREADS` at import | sets the variable; lowers `set_num_threads` |
 | BLAS (NumPy, SciPy) | yes, through `threadpoolctl` | sets `OMP_`/`OPENBLAS_`/`MKL_NUM_THREADS`; `threadpool_limits` |
 | Apple Accelerate (NumPy on macOS) | **No**: `threadpoolctl` cannot see it | sets `VECLIB_MAXIMUM_THREADS` (before NumPy is imported) |
@@ -66,7 +66,7 @@ always wins over them.
 ## For one block of code
 
 {py:func}`stream_limits.thread_scope` holds numba and BLAS to `n` threads inside a block and
-restores them after, also when the block raises. Polars is not affected: its pool is fixed for
+restores them after, also when the block raises. Polars is not affected: its pool is fixed (at import, or at first use in Polars 1.37) for
 the process.
 
 ```python

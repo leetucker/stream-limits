@@ -91,5 +91,6 @@ print(stream_limits.peak_rss_gb())    # GB, the peak during the call
 ```
 
 On Linux the counter is reset by writing to `/proc/self/clear_refs`, so a second measurement in
-the same process reports its own peak; elsewhere it is the process's lifetime peak. Child
+the same process reports its own peak; on macOS and Windows the system's counter cannot be
+reset, so it is the process's lifetime peak (a second measurement is the largest of both). Child
 processes are not included. {py:func}`stream_limits.current_rss_gb` is the memory held now.

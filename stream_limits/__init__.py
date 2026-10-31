@@ -791,10 +791,49 @@ def thread_scope(n: int | None = None) -> Iterator[None]:
 
 
 # ----------------------------------------------------- peak memory used
+def _windows_memory() -> tuple[int, int] | None:
+    """This process's ``(working set, peak working set)`` in bytes, from the
+    Windows API (``GetProcessMemoryInfo``), or None: off Windows, or if the call
+    fails. The working set is the physical memory resident in the process, which
+    is what ``VmRSS`` is on Linux, and the peak is a high-water mark the system
+    keeps."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _Counters(ctypes.Structure):          # PROCESS_MEMORY_COUNTERS
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                        ("PeakWorkingSetSize", ctypes.c_size_t),
+                        ("WorkingSetSize", ctypes.c_size_t),
+                        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                        ("PagefileUsage", ctypes.c_size_t),
+                        ("PeakPagefileUsage", ctypes.c_size_t)]
+
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE        # 64-bit safe
+        kernel32.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Counters),
+                                                     wintypes.DWORD]
+        kernel32.K32GetProcessMemoryInfo.restype = wintypes.BOOL
+        counters = _Counters()
+        counters.cb = ctypes.sizeof(_Counters)
+        if not kernel32.K32GetProcessMemoryInfo(kernel32.GetCurrentProcess(),
+                                                ctypes.byref(counters), counters.cb):
+            return None
+        return int(counters.WorkingSetSize), int(counters.PeakWorkingSetSize)
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
 def reset_peak_rss() -> None:
-    """Restart the peak-memory counter at the current usage (Linux; elsewhere
-    it does nothing, and `peak_rss_gb` then reports the process's lifetime
-    peak)."""
+    """Restart the peak-memory counter at the current usage. Linux only: macOS
+    and Windows keep a counter that cannot be reset, so there `peak_rss_gb`
+    reports the process's lifetime peak (a second measurement in the same
+    process is the largest of both)."""
     try:
         with open("/proc/self/clear_refs", "w") as f:
             f.write("5")
@@ -804,8 +843,12 @@ def reset_peak_rss() -> None:
 
 def peak_rss_gb() -> float | None:
     """The peak resident memory, in GB, since `reset_peak_rss` (or since the
-    process started). The kernel keeps the counter, so reading it is free and
-    nothing is polled. Child processes are not included."""
+    process started). The system keeps the counter, so reading it is free and
+    nothing is polled: ``VmHWM`` on Linux, ``getrusage`` on macOS, the peak
+    working set on Windows. Child processes are not included."""
+    win = _windows_memory()
+    if win is not None:
+        return win[1] / 1e9
     try:
         for line in Path("/proc/self/status").read_text().splitlines():
             if line.startswith("VmHWM:"):
@@ -821,7 +864,11 @@ def peak_rss_gb() -> float | None:
 
 
 def current_rss_gb() -> float | None:
-    """The resident memory in GB right now (Linux; None elsewhere)."""
+    """The resident memory in GB right now (Linux and Windows; None on macOS,
+    where `MemoryBudget` then assumes 0.5 GB)."""
+    win = _windows_memory()
+    if win is not None:
+        return win[0] / 1e9
     try:
         for line in Path("/proc/self/status").read_text().splitlines():
             if line.startswith("VmRSS:"):

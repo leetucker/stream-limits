@@ -317,7 +317,7 @@ def test_explicit_call_before_polars_limits_polars():
 
 
 def test_polars_already_imported_warns():
-    out = _run("import polars; import stream_limits; stream_limits.limit_threads(1)")
+    out = _run("import polars; polars.thread_pool_size(); import stream_limits; stream_limits.limit_threads(1)")
     assert "Polars was imported before the thread limit" in out.stderr
 
 
@@ -478,8 +478,8 @@ def test_set_limits_is_what_the_libraries_call_with_no_arguments():
 
 
 def test_set_limits_warning_points_at_the_caller():
-    out = _run("import polars\nimport stream_limits\nstream_limits.set_limits(threads=1)")
-    assert "<string>:3" in out.stderr and "Polars was imported before" in out.stderr, out.stderr
+    out = _run("import polars\npolars.thread_pool_size()\nimport stream_limits\nstream_limits.set_limits(threads=1)")
+    assert "<string>:4" in out.stderr and "Polars was imported before" in out.stderr, out.stderr
 
 
 # ------------------------------------------------------------- peak memory
@@ -499,3 +499,32 @@ def test_describe_and_module_entry_point():
     assert d["cpus"] >= 1 and d["memory_gb"] > 0
     out = subprocess.run([sys.executable, "-m", "stream_limits"], capture_output=True, text=True)
     assert '"cpus"' in out.stdout
+
+
+# ------------------------------------------------------------ Windows memory counters
+def test_windows_counters_are_used_when_present(monkeypatch):
+    # the branch, on any platform: working set 1 GB, peak working set 2 GB
+    monkeypatch.setattr(sl, "_windows_memory", lambda: (10**9, 2 * 10**9))
+    assert sl.peak_rss_gb() == pytest.approx(2.0)
+    assert sl.current_rss_gb() == pytest.approx(1.0)
+
+
+def test_off_windows_there_is_no_windows_reading():
+    if sys.platform != "win32":
+        assert sl._windows_memory() is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the Windows API")
+def test_windows_reports_current_and_peak_memory():
+    # a fresh process, so the lifetime peak is its own
+    code = ("import numpy as np, stream_limits as s\n"
+            "base = s.peak_rss_gb(); now = s.current_rss_gb()\n"
+            "a = np.ones(50_000_000)\n"                         # 400 MB, touched
+            "peak = s.peak_rss_gb(); held = s.current_rss_gb()\n"
+            "del a\n"
+            "print(base, now, peak, held, s.peak_rss_gb())")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=300)
+    base, now, peak, held, after = map(float, out.stdout.split())
+    assert 0 < now <= base                      # current never exceeds the peak
+    assert peak - base > 0.3 and held - now > 0.3
+    assert after >= peak - 1e-6                 # the peak does not fall when memory is freed

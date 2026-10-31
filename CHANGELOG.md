@@ -36,7 +36,8 @@ it on its own.
 
 - `MemoryBudget` gives the headroom left, for code that chooses between a fast path that needs memory and
   a slower one that needs less.
-- `peak_rss_gb`, `reset_peak_rss` and `current_rss_gb` read the kernel's own counters.
+- `peak_rss_gb`, `reset_peak_rss` and `current_rss_gb` read the system's own counters: Linux, macOS (peak
+  only) and Windows (the working set). Only Linux can reset the peak.
 
 **Documentation**
 
