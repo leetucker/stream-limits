@@ -516,15 +516,18 @@ def test_off_windows_there_is_no_windows_reading():
 
 @pytest.mark.skipif(sys.platform != "win32", reason="the Windows API")
 def test_windows_reports_current_and_peak_memory():
-    # a fresh process, so the lifetime peak is its own
+    # A fresh process, so the lifetime peak is its own. Current memory is read *before* the
+    # peak each time: the process keeps growing between two calls (by a page or two even when
+    # nothing is allocated), so a peak read first can sit just below a later current reading.
     code = ("import numpy as np, stream_limits as s\n"
-            "base = s.peak_rss_gb(); now = s.current_rss_gb()\n"
+            "now = s.current_rss_gb(); base = s.peak_rss_gb()\n"
             "a = np.ones(50_000_000)\n"                         # 400 MB, touched
-            "peak = s.peak_rss_gb(); held = s.current_rss_gb()\n"
+            "held = s.current_rss_gb(); peak = s.peak_rss_gb()\n"
             "del a\n"
-            "print(base, now, peak, held, s.peak_rss_gb())")
+            "after = s.peak_rss_gb()\n"
+            "print(base, now, peak, held, after)")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=300)
     base, now, peak, held, after = map(float, out.stdout.split())
-    assert 0 < now <= base                      # current never exceeds the peak
+    assert 0 < now <= base and held <= peak     # current never exceeds the peak read after it
     assert peak - base > 0.3 and held - now > 0.3
     assert after >= peak - 1e-6                 # the peak does not fall when memory is freed
