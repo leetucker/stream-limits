@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stream-limits"
+version = "0.1.0"
+description = "Cap the threads and memory of numeric Python libraries (Polars, numba, BLAS, pyarrow) at a scheduler's allocation, and measure peak memory"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE.md"]
+authors = [{ name = "Lee Tucker" }]
+keywords = ["threads", "memory", "PBS", "Slurm", "cgroup", "polars", "numba", "HPC"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: System :: Hardware",
+    "Typing :: Typed",
+]
+requires-python = ">=3.10"
+# nothing: it uses whichever of polars, numba, numpy/threadpoolctl and pyarrow
+# are already imported, and imports none of them itself
+dependencies = []
+
+[project.optional-dependencies]
+# threadpoolctl lets thread_scope()/limit_threads() limit BLAS after numpy is loaded
+blas = ["threadpoolctl>=3.1"]
+# docs/: the documentation site, built with Sphinx (see docs/conf.py)
+docs = [
+    "sphinx>=8.0",
+    "myst-parser>=4.0",
+    "furo>=2024.8.6",
+    "sphinx-copybutton>=0.5",
+]
+test = ["pytest>=7.0", "numpy", "numba", "polars", "pyarrow", "threadpoolctl>=3.1"]
+
+[project.urls]
+Homepage = "https://github.com/leetucker/stream-limits"
+Documentation = "https://leetucker.github.io/stream-limits/"
+Changelog = "https://github.com/leetucker/stream-limits/blob/main/CHANGELOG.md"
+Source = "https://github.com/leetucker/stream-limits"
+
+[tool.setuptools.packages.find]
+include = ["stream_limits*"]
+
+[tool.setuptools.package-data]
+stream_limits = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
