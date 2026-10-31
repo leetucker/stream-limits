@@ -73,7 +73,8 @@ def test_a_kept_value_above_the_cap_is_warned_about():
     assert env["OMP_NUM_THREADS"] == "64"
     import warnings
     with warnings.catch_warnings():
-        warnings.simplefilter("error")
+        # only this warning: others (Polars already imported, in a process that has loaded it) are not the point
+        warnings.filterwarnings("error", message=".*left alone.*")
         sl.limit_threads(4, override=True, environ={"OMP_NUM_THREADS": "64"})   # no warning
 
 

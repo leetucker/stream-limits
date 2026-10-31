@@ -390,29 +390,49 @@ def test_apply_defaults_sets_the_budget_only_with_a_known_limit():
         assert b.stdout.strip() == "None", b.stderr
 
 
+# A streaming sort of a Parquet file, in a fresh process so the peak is its own. The file is
+# large enough that the sort, not the readers' fixed overhead, sets the peak: at 8 million
+# rows the budget's effect was borderline on a 4-core runner (a ratio of 0.75 to 0.81),
+# at 20 million it is 0.4 to 0.5.
 SORT = r'''
-import os, sys, tempfile
+import sys
 import stream_limits as s
-if sys.argv[1] == "budget":
-    s.limit_memory(float(sys.argv[2]), fraction=0.1)
-import numpy as np, polars as pl
-d = tempfile.mkdtemp()
-rng = np.random.default_rng(0); n = 8_000_000
-pl.DataFrame({"a": rng.integers(0, 1_000_000, n), **{f"x{i}": rng.normal(size=n) for i in range(6)}}
-             ).write_parquet(d + "/in.parquet", row_group_size=500_000)
+path, mode = sys.argv[1], sys.argv[2]
+if mode == "budget":
+    s.limit_memory(2.0, fraction=0.1)
+import polars as pl
 s.reset_peak_rss()
-pl.scan_parquet(d + "/in.parquet").sort("a").sink_parquet(d + "/out.parquet", engine="streaming")
+pl.scan_parquet(path).sort("a").sink_parquet(path + ".sorted", engine="streaming")
 print(s.peak_rss_gb())
+'''
+
+
+# (generated in a subprocess, so that polars is never imported into the pytest process: with it
+# loaded, every in-process limit_threads() call warns that Polars can no longer be capped)
+GENERATE = r'''
+import sys
+import numpy as np, polars as pl
+n = 20_000_000
+rng = np.random.default_rng(0)
+pl.DataFrame({"a": rng.integers(0, 1_000_000, n), **{f"x{i}": rng.normal(size=n) for i in range(6)}}
+             ).write_parquet(sys.argv[1], row_group_size=500_000)
 '''
 
 
 @linux_only      # the peak-memory counter can be reset only on Linux
 @needs_polars2
-def test_the_budget_bounds_a_streaming_sort():
-    free = float(_run(SORT.replace("sys.argv[1]", "'none'")).stdout.split()[-1])
-    capped = float(_run(SORT.replace("sys.argv[1]", "'budget'").replace("sys.argv[2]", "2.0")
-                        ).stdout.split()[-1])
-    assert capped < 0.8 * free, (free, capped)
+def test_the_budget_bounds_a_streaming_sort(tmp_path):
+    path = str(tmp_path / "in.parquet")
+    made = subprocess.run([sys.executable, "-c", GENERATE, path], capture_output=True, text=True,
+                          timeout=600)
+    assert made.returncode == 0, made.stderr[-400:]
+    peaks = {}
+    for mode in ("none", "budget"):
+        out = subprocess.run([sys.executable, "-c", SORT, path, mode], capture_output=True,
+                             text=True, timeout=600)
+        assert out.returncode == 0, out.stderr[-400:]
+        peaks[mode] = float(out.stdout.split()[-1])
+    assert peaks["budget"] < 0.8 * peaks["none"], peaks
 
 
 # --------------------------------------------------------------- set_limits
