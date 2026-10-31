@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1
+
+- **Windows reports memory use.** `peak_rss_gb` and `current_rss_gb` returned `None` on Windows in
+  0.1.0; they now read the process's peak and current working set (the physical memory resident in it,
+  as on Linux) through the Windows API, with no new dependency. Windows cannot reset its peak, so
+  there it is the process's lifetime peak, as on macOS. `MemoryBudget` uses the real current memory
+  on Windows instead of assuming 0.5 GB.
+- Documentation: Polars 1.37 creates its thread pool at first use, while later versions (1.44 and
+  2.x) create it at import; the thread-limit pages say so.
+
 ## 0.1.0
 
 First release, coinciding with updates to hdfe-stream, logit-stream and
@@ -36,8 +46,7 @@ it on its own.
 
 - `MemoryBudget` gives the headroom left, for code that chooses between a fast path that needs memory and
   a slower one that needs less.
-- `peak_rss_gb`, `reset_peak_rss` and `current_rss_gb` read the system's own counters: Linux, macOS (peak
-  only) and Windows (the working set). Only Linux can reset the peak.
+- `peak_rss_gb`, `reset_peak_rss` and `current_rss_gb` read the kernel's own counters.
 
 **Documentation**
 
