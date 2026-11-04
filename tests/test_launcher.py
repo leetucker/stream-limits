@@ -133,11 +133,15 @@ def test_timeout_terminates_descendants():
     result = run_limited(python(code), mode="monitor", timeout=3)
     assert result.status == "timeout"
     pid = int(result.stdout.strip())
+    def gone():
+        # the killed process can vanish between any two of these calls
+        try:
+            return psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return True
+
     for _ in range(100):
-        if (
-            not psutil.pid_exists(pid)
-            or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
-        ):
+        if gone():
             break
         time.sleep(0.01)
     else:

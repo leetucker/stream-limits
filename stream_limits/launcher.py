@@ -167,11 +167,21 @@ def run_limited(
         # POSIX: WNOWAIT leaves the child a zombie, so its pid (and process
         # group id) cannot be reused before stop_tree kills the group and
         # reaps it.
-        if posix:
+        if posix and hasattr(os, "waitid"):
             return (
                 os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
                 is not None
             )
+        if posix:
+            # macOS builds of Python often lack os.waitid. Only this process
+            # can reap its child, so a zombie status also means "exited, pid
+            # still held".
+            if process is None:
+                return True
+            try:
+                return process.status() == psutil.STATUS_ZOMBIE
+            except psutil.NoSuchProcess:
+                return True
         return proc.poll() is not None
 
     def stop_tree():
