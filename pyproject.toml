@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stream-limits"
-version = "0.1.1"
+version = "0.2.0"
 description = "Cap the threads and memory of numeric Python libraries (Polars, numba, BLAS, pyarrow) at a scheduler's allocation, and measure peak memory"
 readme = "README.md"
 license = "MIT"
@@ -33,6 +33,9 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
+# Opt-in subprocess launcher; core installs remain standard-library-only.
+launcher = ["psutil>=5.9"]
+testing = ["pytest>=7.0", "psutil>=5.9"]
 # threadpoolctl lets thread_scope()/limit_threads() limit BLAS after numpy is loaded
 blas = ["threadpoolctl>=3.1"]
 # docs/: the documentation site, built with Sphinx (see docs/conf.py)
@@ -42,7 +45,7 @@ docs = [
     "furo>=2024.8.6",
     "sphinx-copybutton>=0.5",
 ]
-test = ["pytest>=7.0", "numpy", "numba", "polars", "pyarrow", "threadpoolctl>=3.1",
+test = ["pytest>=7.0", "psutil>=5.9", "numpy", "numba", "polars", "pyarrow", "threadpoolctl>=3.1",
         'numexpr; python_version < "3.15"']
 
 [project.urls]

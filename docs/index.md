@@ -82,3 +82,15 @@ other-libraries
 reference
 changelog
 ```
+
+## Running a program under a memory limit
+
+The optional [launcher](launcher.md) runs a program in a child process, stops it
+if it goes over a memory or time limit, and reports its peak memory. It also
+gives other packages' test suites fixtures for memory tests.
+
+```{toctree}
+:hidden:
+
+launcher
+```

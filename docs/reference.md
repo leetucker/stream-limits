@@ -65,3 +65,13 @@
 `NUMEXPR_NUM_THREADS`, `NUMEXPR_MAX_THREADS`, `RAYON_NUM_THREADS`, `TF_NUM_INTRAOP_THREADS`,
 `TF_NUM_INTEROP_THREADS`, `LOKY_MAX_CPU_COUNT`, `JULIA_NUM_THREADS`. `limit_memory` sets
 `POLARS_OOC_MEMORY_BUDGET_MB` and, if asked, `POLARS_OOC_SPILL_DIR`.
+
+## Optional launcher
+
+```{eval-rst}
+.. automodule:: stream_limits.launcher
+   :members: RunResult, run_limited, capabilities, thread_env
+
+.. automodule:: stream_limits.testing
+   :members: verify_memory_limit, kernel_oom_proved
+```

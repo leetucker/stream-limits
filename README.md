@@ -112,4 +112,18 @@ applies thread limits and reads memory use (peak and current working set), but i
 macOS and Windows report a lifetime peak, as their counters cannot be reset. On macOS, NumPy's Apple
 Accelerate BLAS is limited only by `VECLIB_MAXIMUM_THREADS` before NumPy is imported (threadpoolctl cannot see it).
 
+## Running a program under a memory limit
+
+The optional launcher (`pip install 'stream-limits[launcher]'`, which adds psutil)
+runs a program in a child process, stops it if it goes over a memory or time
+limit, and reports why it ended and its peak memory:
+
+```bash
+python -m stream_limits.launcher --mode watchdog --memory-gb 4 --threads 2 -- python analysis.py
+```
+
+The watchdog works on Linux, macOS and Windows; a kernel-enforced limit needs a
+Linux cgroup set up for it. `stream-limits[testing]` adds pytest fixtures for
+memory tests. See [Running a program under a memory limit](docs/launcher.md).
+
 MIT licence.

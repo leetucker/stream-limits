@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0
+
+- **Run a program under a memory limit and see how much memory it used.** The new
+  launcher runs a script, test suite or other program in a child process, stops it
+  if it goes over a memory limit or a time limit, and reports why it ended and its
+  peak memory. The limit is a watchdog that checks memory every 10 ms (Linux,
+  macOS, Windows), or a kernel limit through a Linux cgroup. It also sets the
+  program's threads (`--threads`). It is an optional extra,
+  `pip install 'stream-limits[launcher]'`, which adds psutil; the rest of
+  stream-limits is unchanged and still needs only the standard library. See
+  [Running a program under a memory limit](https://leetucker.github.io/stream-limits/launcher.html).
+- **Pytest fixtures for memory tests.** `pytest_plugins =
+  ["stream_limits.pytest_plugin"]` gives a test suite `resource_runner`, which runs
+  a test's work in a child process under the watchdog on every platform, or under a
+  kernel limit when one is set up (`STREAM_LIMITS_TEST_CGROUP_PARENT`). Install
+  `stream-limits[testing]`.
+
 ## 0.1.1
 
 - **Windows reports memory use.** `peak_rss_gb` and `current_rss_gb` returned `None` on Windows in
