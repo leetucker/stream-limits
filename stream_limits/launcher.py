@@ -39,13 +39,21 @@ class RunResult:
     descendants_terminated: bool
     rss_sampling_complete: bool
     os_peak_rss_bytes: int | None = None
+    peak_private_bytes: int | None = None
+    memory_measure: str = "rss"
 
     # os_peak_rss_bytes: the largest resident set any single process reached,
     # as the OS records it. POSIX: the child's ru_maxrss from wait4, which
     # covers the child and the descendants it waited for (exact, not sampled;
     # not summed over the tree; background processes it left running are not
     # included). Windows: the largest peak working set read while sampling.
-    # None when unavailable.
+    # None when unavailable. Like RSS, it counts pages of memory-mapped files.
+    #
+    # peak_private_bytes: the largest sampled total over the process tree of
+    # memory that is not a file's pages (see _private_bytes). None on macOS.
+    #
+    # memory_measure: what the watchdog compared with the limit, "private" or
+    # "rss" (asked for, or private memory is unavailable on this platform).
 
     def as_dict(self):
         return asdict(self)
@@ -58,6 +66,7 @@ def capabilities():
         "psutil_available": importlib.util.find_spec("psutil") is not None,
         "monitor": True,
         "watchdog": True,
+        "private_memory": private_memory_available(),
         "hard_backends": ["cgroup-v1", "cgroup-v2"] if sys.platform == "linux" else [],
         "hard_limit_accounting": "cgroup-charged memory"
         if sys.platform == "linux"
@@ -76,6 +85,36 @@ def thread_env(threads, env=None):
     for name in ("STREAM_LIMITS_MAX_THREADS", *_THREAD_ENV):
         out[name] = str(threads)
     return out
+
+
+def _private_bytes(process, info):
+    """Memory of one process that is not a file's pages, which the kernel can
+    drop and read back (memory-mapped scratch files, mapped libraries).
+    Linux: anonymous plus shared memory (RssAnon + RssShmem; shared memory
+    is not reclaimable without swap), else RSS less psutil's shared pages.
+    Windows: private bytes (committed memory, so it can exceed RSS). None
+    elsewhere (macOS has no cheap equivalent)."""
+    if sys.platform.startswith("linux"):
+        try:
+            found = {}
+            with open(f"/proc/{process.pid}/status", encoding="ascii") as fh:
+                for line in fh:
+                    if line.startswith(("RssAnon:", "RssShmem:")):
+                        key, value = line.split()[:2]
+                        found[key] = int(value) * 1024
+            if "RssAnon:" in found:
+                return found["RssAnon:"] + found.get("RssShmem:", 0)
+        except (OSError, ValueError):
+            pass
+        return max(0, info.rss - getattr(info, "shared", 0))
+    if hasattr(info, "private"):
+        return info.private
+    return None
+
+
+def private_memory_available():
+    """Whether this platform reports private memory (Linux, Windows)."""
+    return sys.platform.startswith("linux") or os.name == "nt"
 
 
 def _positive(value, name):
@@ -101,12 +140,19 @@ def run_limited(
     max_output_bytes=1_000_000,
     threads: int | None = None,
     capture_output: bool = True,
+    memory_measure: str = "private",
 ):
     """Run a command without a shell and return measurements and termination cause.
 
     hard: verified Linux cgroup cap, including descendants; no automatic fallback.
-    watchdog: sampled process-tree RSS threshold, which can overshoot.
+    watchdog: sampled process-tree memory threshold, which can overshoot.
     monitor: measurements/timeouts only, without a memory ceiling.
+
+    memory_measure: what the watchdog compares with the limit. "private"
+    (default) leaves out pages of files, which the kernel can reclaim, so a
+    program that memory-maps large scratch files is not stopped for them;
+    where private memory is unavailable (macOS) RSS is used, and the result's
+    memory_measure says so. "rss" counts every resident page.
 
     GB is decimal. The supervisor stays outside the child's hard cap. env has
     subprocess replacement semantics; no budget/thread variables are injected
@@ -125,6 +171,13 @@ def run_limited(
         )
     if mode not in ("hard", "watchdog", "monitor"):
         raise ValueError("mode must be hard, watchdog or monitor")
+    if memory_measure not in ("private", "rss"):
+        raise ValueError("memory_measure must be private or rss")
+    measure = (
+        "private"
+        if memory_measure == "private" and private_memory_available()
+        else "rss"
+    )
     if memory_gb is not None:
         _positive(memory_gb, "memory_gb")
     if mode != "monitor" and memory_gb is None:
@@ -158,6 +211,7 @@ def run_limited(
     group = MemoryCgroup(cgroup_parent, limit) if mode == "hard" else None
     proc, kernel, tracked = None, None, {}
     reason, peak, descendants = None, 0, False
+    private_peak = 0 if private_memory_available() else None
     os_peak, stopped = None, False
     sampling_complete = True
     started = time.monotonic()
@@ -239,7 +293,7 @@ def run_limited(
             except psutil.NoSuchProcess:
                 process = None
             while not exited():
-                rss = 0
+                rss, private = 0, 0
                 try:
                     members = (
                         [process, *process.children(recursive=True)]
@@ -250,6 +304,8 @@ def run_limited(
                         try:
                             info = p.memory_info()
                             rss += info.rss
+                            if private_peak is not None:
+                                private += _private_bytes(p, info) or 0
                             if hasattr(info, "peak_wset"):  # Windows
                                 os_peak = max(os_peak or 0, info.peak_wset)
                             if p.pid != proc.pid:
@@ -263,10 +319,13 @@ def run_limited(
                 except psutil.AccessDenied:
                     sampling_complete = False
                 peak = max(peak, rss)
+                if private_peak is not None:
+                    private_peak = max(private_peak, private)
                 if mode == "watchdog" and not sampling_complete:
                     reason = "monitoring_failed"
                     break
-                if mode == "watchdog" and rss > limit:
+                watched = private if measure == "private" else rss
+                if mode == "watchdog" and watched > limit:
                     reason = "rss_limit_exceeded"
                     break
                 if timeout is not None and time.monotonic() - started >= timeout:
@@ -316,6 +375,8 @@ def run_limited(
                 descendants,
                 sampling_complete,
                 os_peak_rss_bytes=os_peak,
+                peak_private_bytes=private_peak,
+                memory_measure=measure,
             )
     finally:
         try:
@@ -343,6 +404,12 @@ def main():
         help="let the command write to this terminal; the JSON summary goes to stderr",
     )
     parser.add_argument("--report", help="also write the JSON summary to this file")
+    parser.add_argument(
+        "--memory-measure",
+        choices=["private", "rss"],
+        default="private",
+        help="what the watchdog limits: private memory (default; not file pages) or RSS",
+    )
     parser.add_argument("--capabilities", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -359,6 +426,7 @@ def main():
             timeout=args.timeout,
             threads=args.threads,
             capture_output=not args.no_capture,
+            memory_measure=args.memory_measure,
         )
     except (ValueError, OSError, RuntimeError, ImportError) as exc:
         parser.error(str(exc))

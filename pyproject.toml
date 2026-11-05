@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stream-limits"
-version = "0.2.0"
+version = "0.2.1"
 description = "Cap the threads and memory of numeric Python libraries (Polars, numba, BLAS, pyarrow) at a scheduler's allocation, and measure peak memory"
 readme = "README.md"
 license = "MIT"

@@ -87,7 +87,7 @@ import warnings
 from pathlib import Path
 from typing import Iterator, Mapping
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "set_limits", "limit_threads", "limit_memory", "apply_scheduler_defaults", "thread_scope",

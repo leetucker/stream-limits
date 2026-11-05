@@ -49,7 +49,18 @@ The command is a list of arguments, run without a shell. GB are decimal
 | `monitor` | Linux, macOS, Windows | No limit: measures, with an optional timeout |
 
 **The watchdog** adds up the memory of the program and every process it has
-started, and stops them all when the total passes the limit. Because it samples,
+started, and stops them all when the total passes the limit. It counts
+*private* memory: memory that is not the pages of a file. A program that
+memory-maps a large file (a scratch array on disk, a mapped Parquet file) has
+the file's pages in its resident memory (RSS), but the kernel can drop them and
+read them back when memory runs short, so they are not counted against the
+limit. hdfe-stream is such a program: on a 20-million-row panel its RSS reached
+2.3 GB while its private memory stayed at 1.2 GB, the same as on 2.6 million
+rows. On Linux private memory is anonymous plus shared memory; on Windows it is
+private bytes (committed memory, which can be more than RSS). macOS has no cheap
+equivalent, so there the watchdog counts RSS. `--memory-measure rss`
+(`memory_measure="rss"`) counts every resident page on every platform, and the
+result's `memory_measure` says which was used. Because it samples,
 it can overshoot a little before it acts, and a peak shorter than the interval
 can slip between samples. In practice it is tight: on Linux, with a 1.5 GB limit,
 a fast 3 GB NumPy allocation, a 2.5 GB spike lasting 20 ms and a grandchild
@@ -74,7 +85,7 @@ running under the watchdog. macOS and Windows have no hard mode.
 | `ok` | The program finished with exit code 0 |
 | `command_failed` | It finished with another exit code |
 | `timeout` | It ran past `timeout` and was stopped |
-| `rss_limit_exceeded` | The watchdog stopped it |
+| `rss_limit_exceeded` | The watchdog stopped it (by the measure in `memory_measure`, despite the name) |
 | `monitoring_failed` | The watchdog could not read its memory and stopped it |
 | `kernel_oom` | The kernel killed a process for going over a hard limit |
 
@@ -83,16 +94,19 @@ process. It is reported even when the process killed was a child the program
 started and the program itself carried on and exited with 0, so check `status`
 and not only the exit code.
 
-Two peaks are reported:
+Three peaks are reported:
 
-- `os_peak_rss_bytes`: the largest memory of any single process, as the
-  operating system records it. On Linux and macOS it is exact, and covers the
-  program and every process it started and waited for (not one it left running
-  in the background). On Windows it is read while sampling. Use it when a test
-  needs a reliable peak.
-- `peak_rss_bytes`: the largest sampled total over all the program's processes
-  at once. Use it for a program with several worker processes. A program that
-  ends before the first sample reports 0.
+- `peak_private_bytes`: the largest sampled total of private memory over all the
+  program's processes (`None` on macOS). This is the one to use for a program
+  that memory-maps files, and the one the watchdog limits.
+- `os_peak_rss_bytes`: the largest RSS of any single process, as the operating
+  system records it. On Linux and macOS it is exact, and covers the program and
+  every process it started and waited for (not one it left running in the
+  background). On Windows it is read while sampling. It counts mapped file
+  pages. Use it when a test needs a reliable peak of a program that maps no
+  large files, or on macOS.
+- `peak_rss_bytes`: the largest sampled total RSS over all the program's
+  processes at once. A program that ends before the first sample reports 0.
 
 With a hard limit, `result.kernel` adds the kernel's own figures: the limit, any
 smaller limit set higher up, its peak (which counts file cache and kernel
@@ -230,7 +244,10 @@ and skip without one. The plugin registers the markers `resource` and
 Polars, NumPy and numba already holds 0.2-0.4 GB, so a small input under a 1.5 GB
 limit passes whatever the code does with it. To catch code that holds the data in
 memory, give the test an input larger in memory than the limit less that
-baseline, or compare `os_peak_rss_bytes` at N rows and at several times N.
+baseline, or compare peaks at N rows and at several times N:
+`peak_private_bytes` where it is available, since a program that memory-maps
+its scratch files has an RSS that grows with the data even when its private
+memory does not.
 
 Use the launcher only for tests about memory. Ordinary tests are better run in
 the test process, as before.

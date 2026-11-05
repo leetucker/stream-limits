@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1
+
+- **The watchdog no longer counts the pages of memory-mapped files.** A program
+  that memory-maps large scratch files, as hdfe-stream does, has those pages in
+  its resident memory, but the kernel can reclaim them, so a watchdog that
+  counted them stopped healthy programs: a 20-million-row hdfe-stream fit with
+  1.2 GB of its own memory reached 2.3 GB of RSS. The watchdog now limits
+  private memory (Linux, Windows; macOS still uses RSS), reported as
+  `peak_private_bytes`. `--memory-measure rss` restores the old behaviour.
+
 ## 0.2.0
 
 - **Run a program under a memory limit and see how much memory it used.** The new

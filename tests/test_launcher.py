@@ -328,3 +328,65 @@ def test_cli_without_capture_passes_output_through(tmp_path):
     summary = json.loads(result.stderr)
     assert summary["status"] == "ok" and summary["stdout"] == ""
     assert json.loads(report.read_text()) == summary
+
+
+# A program that writes a 600 MB file and memory-maps it, touching every page:
+# its RSS grows by the file's size, its private memory does not.
+MAPPED = """
+import mmap, os, sys
+path = sys.argv[1]
+with open(path, "wb") as fh:
+    fh.truncate(600_000_000)
+with open(path, "r+b") as fh:
+    m = mmap.mmap(fh.fileno(), 0)
+    for i in range(0, len(m), 4096):
+        m[i] = 1
+    m.flush()
+    total = sum(m[i] for i in range(0, len(m), 4096))
+    import time; time.sleep(0.3)
+print(total)
+"""
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux private memory")
+def test_watchdog_ignores_mapped_file_pages_by_default(tmp_path):
+    command = [sys.executable, "-c", MAPPED, str(tmp_path / "scratch.bin")]
+    result = run_limited(command, mode="watchdog", memory_gb=0.3, timeout=60)
+    assert result.status == "ok", result.as_dict()
+    assert result.memory_measure == "private"
+    assert result.peak_private_bytes < 200_000_000
+    assert result.peak_rss_bytes > 400_000_000      # the mapped pages are resident
+    rss = run_limited(command, mode="watchdog", memory_gb=0.3, timeout=60,
+                      memory_measure="rss")
+    assert rss.status == "rss_limit_exceeded" and rss.memory_measure == "rss"
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux private memory")
+def test_watchdog_stops_private_memory_over_the_limit():
+    code = "import time; x=bytearray(500_000_000); x[::4096]=b'1'*len(x[::4096]); time.sleep(5)"
+    result = run_limited(python(code), mode="watchdog", memory_gb=0.3, timeout=30)
+    assert result.status == "rss_limit_exceeded" and result.memory_measure == "private"
+    assert result.peak_private_bytes > 300_000_000
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux /proc")
+def test_shared_memory_counts_as_private():
+    # shared memory (/dev/shm, multiprocessing) cannot be reclaimed without swap
+    code = ("from multiprocessing import shared_memory as s; import time; "
+            "m=s.SharedMemory(create=True,size=300_000_000); m.buf[::4096]=b'1'*len(m.buf[::4096]); "
+            "time.sleep(0.5); m.close(); m.unlink()")
+    result = run_limited(python(code), mode="monitor", timeout=30)
+    assert result.status == "ok" and result.peak_private_bytes > 250_000_000
+
+
+def test_private_measure_is_reported_or_falls_back():
+    from stream_limits.launcher import private_memory_available
+
+    result = run_limited(python("import time; time.sleep(0.3)"), mode="watchdog",
+                         memory_gb=1, timeout=30)
+    if private_memory_available():
+        assert result.memory_measure == "private" and result.peak_private_bytes > 0
+    else:
+        assert result.memory_measure == "rss" and result.peak_private_bytes is None
+    with pytest.raises(ValueError):
+        run_limited(python("pass"), mode="monitor", memory_measure="uss")
