@@ -65,7 +65,11 @@ def test_watchdog_and_timeout_have_distinct_causes():
         timeout=10,
     )
     assert result.status == "rss_limit_exceeded" and result.returncode != 0
-    assert result.peak_rss_bytes > 64_000_000
+    # what the watchdog limited: on Windows private bytes count the bytearray
+    # once committed, before its pages are resident
+    watched = (result.peak_private_bytes if result.memory_measure == "private"
+               else result.peak_rss_bytes)
+    assert watched > 64_000_000
     result = run_limited(
         python("import time; time.sleep(5)"), mode="monitor", timeout=0.2
     )
@@ -247,8 +251,6 @@ def test_os_peak_is_exact_and_covers_short_commands():
     assert result.status == "ok"
     assert result.os_peak_rss_bytes is not None
     assert result.os_peak_rss_bytes >= 200_000_000
-    if os.name != "posix":   # Windows reads its peak while sampling
-        return
     # too short for any sample: the sampled peak can be 0, the OS's is not
     quick = run_limited(python("pass"), mode="monitor", timeout=30)
     assert quick.os_peak_rss_bytes is not None and quick.os_peak_rss_bytes > 0

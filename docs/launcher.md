@@ -102,8 +102,8 @@ Three peaks are reported:
 - `os_peak_rss_bytes`: the largest RSS of any single process, as the operating
   system records it. On Linux and macOS it is exact, and covers the program and
   every process it started and waited for (not one it left running in the
-  background). On Windows it is read while sampling. It counts mapped file
-  pages. Use it when a test needs a reliable peak of a program that maps no
+  background). On Windows it is the program's own peak working set, read when
+  it exits (not its child processes'). It counts mapped file pages. Use it when a test needs a reliable peak of a program that maps no
   large files, or on macOS.
 - `peak_rss_bytes`: the largest sampled total RSS over all the program's
   processes at once. A program that ends before the first sample reports 0.

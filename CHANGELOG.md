@@ -9,6 +9,8 @@
   1.2 GB of its own memory reached 2.3 GB of RSS. The watchdog now limits
   private memory (Linux, Windows; macOS still uses RSS), reported as
   `peak_private_bytes`. `--memory-measure rss` restores the old behaviour.
+- On Windows, `os_peak_rss_bytes` is now the program's exact peak working set,
+  read when it exits, instead of the last value seen while sampling.
 
 ## 0.2.0
 

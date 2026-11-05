@@ -18,7 +18,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 
-from . import _THREAD_ENV
+from . import _THREAD_ENV, _windows_memory
 from .enforcement import MemoryCgroup, UnsupportedEnforcement
 
 
@@ -46,8 +46,10 @@ class RunResult:
     # as the OS records it. POSIX: the child's ru_maxrss from wait4, which
     # covers the child and the descendants it waited for (exact, not sampled;
     # not summed over the tree; background processes it left running are not
-    # included). Windows: the largest peak working set read while sampling.
-    # None when unavailable. Like RSS, it counts pages of memory-mapped files.
+    # included). Windows: the child's peak working set, read from its handle
+    # after it exits (not its descendants'; the largest sampled value if that
+    # read fails). None when unavailable. Like RSS, it counts pages of
+    # memory-mapped files.
     #
     # peak_private_bytes: the largest sampled total over the process tree of
     # memory that is not a file's pages (see _private_bytes). None on macOS.
@@ -270,6 +272,12 @@ def run_limited(
             if proc.poll() is None:
                 proc.kill()
             proc.wait()
+            # The exited process's counters stay readable while Popen holds
+            # its handle: the exact peak working set, not the last sample.
+            handle = getattr(proc, "_handle", None)
+            counters = _windows_memory(int(handle)) if handle is not None else None
+            if counters is not None:
+                os_peak = max(os_peak or 0, counters[1])
 
     def tail(handle):
         size = handle.seek(0, os.SEEK_END)

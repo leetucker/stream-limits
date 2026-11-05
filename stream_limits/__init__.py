@@ -791,12 +791,13 @@ def thread_scope(n: int | None = None) -> Iterator[None]:
 
 
 # ----------------------------------------------------- peak memory used
-def _windows_memory() -> tuple[int, int] | None:
+def _windows_memory(handle=None) -> tuple[int, int] | None:
     """This process's ``(working set, peak working set)`` in bytes, from the
     Windows API (``GetProcessMemoryInfo``), or None: off Windows, or if the call
     fails. The working set is the physical memory resident in the process, which
     is what ``VmRSS`` is on Linux, and the peak is a high-water mark the system
-    keeps."""
+    keeps. `handle`: another process's handle instead (the launcher reads a
+    child's peak after it exits, while its handle is still open)."""
     if sys.platform != "win32":
         return None
     try:
@@ -821,8 +822,8 @@ def _windows_memory() -> tuple[int, int] | None:
         kernel32.K32GetProcessMemoryInfo.restype = wintypes.BOOL
         counters = _Counters()
         counters.cb = ctypes.sizeof(_Counters)
-        if not kernel32.K32GetProcessMemoryInfo(kernel32.GetCurrentProcess(),
-                                                ctypes.byref(counters), counters.cb):
+        target = kernel32.GetCurrentProcess() if handle is None else handle
+        if not kernel32.K32GetProcessMemoryInfo(target, ctypes.byref(counters), counters.cb):
             return None
         return int(counters.WorkingSetSize), int(counters.PeakWorkingSetSize)
     except Exception:                                          # noqa: BLE001
