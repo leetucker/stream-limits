@@ -87,10 +87,11 @@ import warnings
 from pathlib import Path
 from typing import Iterator, Mapping
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = [
     "set_limits", "limit_threads", "limit_memory", "apply_scheduler_defaults", "thread_scope",
+    "set_openmp_wait_policy",
     "detect_cpus", "detect_memory_gb", "describe", "MemoryBudget",
     "peak_rss_gb", "reset_peak_rss", "current_rss_gb",
 ]
@@ -788,6 +789,49 @@ def thread_scope(n: int | None = None) -> Iterator[None]:
             yield
     finally:
         numba.set_num_threads(previous)
+
+
+def _openmp_loaded() -> bool | None:
+    """Whether an OpenMP runtime is already in this process (Linux only; None
+    elsewhere). It reads ``OMP_WAIT_POLICY`` once, when it loads."""
+    try:
+        maps = Path("/proc/self/maps").read_text()
+    except OSError:
+        return None
+    return any(name in maps for name in ("libgomp", "libiomp5", "libomp"))
+
+
+def set_openmp_wait_policy(policy: str = "passive", *, override: bool = False,
+                           environ=None) -> dict:
+    """Set how OpenMP threads wait between parallel regions, by ``OMP_WAIT_POLICY``.
+
+    With ``"passive"`` an idle thread sleeps until the next region; with
+    ``"active"`` it spins. A package whose compiled code makes many short
+    parallel calls (numba's ``prange`` loops, one per batch of data) can run
+    several times slower with spinning threads, notably on CPUs with
+    performance and efficiency cores, and a little slower on others. Code with
+    few, long parallel regions (hdfe-stream's solvers, logit-stream's fits)
+    is unaffected, and this function is not called by importing the package:
+    a package opts in, since the setting reaches every OpenMP library in the
+    process (BLAS builds on OpenMP, scikit-learn, LightGBM).
+
+    A value the user has set is left alone unless `override`. The runtime reads
+    the variable once, when it loads (numba loads its OpenMP layer at the first
+    parallel call), so call this before the first parallel call; the result's
+    ``"late"`` is True when a runtime was already loaded (Linux), in which case
+    the variable is still set, for child processes, but this process is
+    unaffected. Returns ``{"policy": ..., "set": bool, "late": bool | None}``,
+    where ``"policy"`` is the value in effect."""
+    if policy not in ("passive", "active"):
+        raise ValueError(f"policy must be 'passive' or 'active', not {policy!r}")
+    environ = os.environ if environ is None else environ
+    current = environ.get("OMP_WAIT_POLICY")
+    if current and not override:
+        return {"policy": current.lower(), "set": False, "late": None}
+    late = _openmp_loaded() if environ is os.environ else None
+    environ["OMP_WAIT_POLICY"] = policy
+    return {"policy": policy, "set": True, "late": late}
+
 
 
 # ----------------------------------------------------- peak memory used

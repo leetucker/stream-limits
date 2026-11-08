@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0
+
+- **A new function, `set_openmp_wait_policy`, controls how idle OpenMP threads
+  wait.** Programs that make many short parallel calls, such as numba loops run
+  once per batch of data, can run noticeably slower when the idle threads spin
+  while they wait for the next call, especially on processors that mix fast and
+  efficient cores. Telling the threads to sleep instead (`OMP_WAIT_POLICY=passive`,
+  the default here) fixed this in diff-stream: fits ran 2% to 15% faster on a
+  cloud server, and on a laptop with mixed cores 8 threads went from slower than
+  one thread to faster. Programs with a few long parallel calls, such as
+  hdfe-stream and logit-stream, run the same either way.
+- **A package has to ask for it.** Importing stream-limits, and
+  `apply_scheduler_defaults`, still change nothing, because the setting reaches
+  every OpenMP library in the process (BLAS builds on OpenMP, scikit-learn,
+  LightGBM). A value you have set yourself is kept unless you pass
+  `override=True`.
+- **It must run before OpenMP starts.** The setting is read once, when the
+  OpenMP runtime loads; numba loads its runtime at its first parallel call, so
+  calling the function after importing numba is still in time. The function
+  reports when a runtime was already loaded (Linux), in which case the setting
+  reaches only programs started afterwards.
+
 ## 0.2.1
 
 - **The watchdog no longer counts the pages of memory-mapped files.** A program

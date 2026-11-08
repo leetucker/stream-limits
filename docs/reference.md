@@ -15,6 +15,8 @@
 
 .. autofunction:: thread_scope
 
+.. autofunction:: set_openmp_wait_policy
+
 .. autofunction:: polars_spills
 ```
 

@@ -81,3 +81,21 @@ allocation, read from the environment, cgroups or the scheduler (see
 [Schedulers and containers](schedulers.md)), and otherwise the machine's. A job that runs several
 processes should give each its share, for example
 `STREAM_LIMITS_MAX_THREADS=$(( NCPUS / 4 ))` for four.
+
+
+## How OpenMP threads wait
+
+OpenMP threads that finish a parallel region either spin, waiting for the next one, or
+sleep. Spinning is quicker to resume, but a program that makes many short parallel calls
+(numba's `prange` loops, one per batch of data) can run several times slower with it,
+notably on CPUs that mix performance and efficiency cores, and a little slower on others.
+Programs with few, long parallel regions are unaffected: hdfe-stream's solvers and
+logit-stream's fits ran as fast either way.
+
+{py:func}`stream_limits.set_openmp_wait_policy` sets `OMP_WAIT_POLICY` (to `"passive"` unless you
+say `"active"`). A package opts in by calling it, because the setting reaches every
+OpenMP library in the process (BLAS builds on OpenMP, scikit-learn, LightGBM); importing
+stream-limits, and `apply_scheduler_defaults`, leave it alone. A value you have set is kept unless
+you pass `override=True`. The runtime reads the variable when it loads, which for numba is
+at its first parallel call, so call the function before that. The result says when a runtime
+was already loaded (Linux), in which case the variable is set for child processes only.

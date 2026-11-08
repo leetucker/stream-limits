@@ -213,3 +213,65 @@ def test_a_preset_spill_dir_is_kept_unless_override(tmp_path):
     a = _run(code.format(extra=""), POLARS_OOC_SPILL_DIR="/somewhere/else")
     b = _run(code.format(extra=", override=True"), POLARS_OOC_SPILL_DIR="/somewhere/else")
     assert a.stdout.strip() == "/somewhere/else" and b.stdout.strip() == str(tmp_path), (a.stderr, b.stderr)
+
+
+# --- set_openmp_wait_policy ---
+
+def test_wait_policy_sets_the_variable_and_respects_the_user():
+    env = {}
+    assert sl.set_openmp_wait_policy(environ=env) == {"policy": "passive", "set": True, "late": None}
+    assert env["OMP_WAIT_POLICY"] == "passive"
+    env = {"OMP_WAIT_POLICY": "ACTIVE"}
+    assert sl.set_openmp_wait_policy(environ=env) == {"policy": "active", "set": False, "late": None}
+    assert env["OMP_WAIT_POLICY"] == "ACTIVE"
+    assert sl.set_openmp_wait_policy(environ=env, override=True)["set"] is True
+    assert env["OMP_WAIT_POLICY"] == "passive"
+    with pytest.raises(ValueError):
+        sl.set_openmp_wait_policy("sleepy", environ={})
+
+
+def test_importing_the_module_leaves_the_policy_alone():
+    r = _run("import os, stream_limits; print(os.environ.get('OMP_WAIT_POLICY'))")
+    assert r.stdout.strip() == "None"
+    r = _run("import os, stream_limits; stream_limits.apply_scheduler_defaults(); "
+             "print(os.environ.get('OMP_WAIT_POLICY'))", NCPUS="2")
+    assert r.stdout.strip() == "None"
+
+
+NUMBA_PROBE = """
+import numpy as np, sys
+{before}
+import numba
+from numba import njit, prange
+import stream_limits
+print(stream_limits.set_openmp_wait_policy()["late"])
+@njit(parallel=True)
+def f(a):
+    s = 0.0
+    for i in prange(a.size):
+        s += a[i]
+    return s
+f(np.ones(100))
+{after}
+"""
+
+
+def test_wait_policy_takes_effect_when_numba_is_imported_first():
+    # numba loads its OpenMP runtime at the first parallel call, which is after
+    r = _run(NUMBA_PROBE.format(before="", after="print(numba.threading_layer())"),
+             OMP_DISPLAY_ENV="verbose")
+    if "omp" not in r.stdout.split():
+        pytest.skip("numba's OpenMP threading layer is not in use")
+    assert r.stdout.split()[0] == "False"
+    assert "OMP_WAIT_POLICY = 'PASSIVE'" in r.stderr
+
+
+def test_wait_policy_reports_a_runtime_that_is_already_loaded():
+    r = _run(NUMBA_PROBE.format(before="", after="") +
+             "\nimport stream_limits as s\nprint(s.set_openmp_wait_policy(override=True)['late'])")
+    if not sys.platform.startswith("linux"):
+        pytest.skip("detection needs /proc/self/maps")
+    lines = r.stdout.split()
+    if lines[-1] == "False":
+        pytest.skip("numba's OpenMP layer is not in use")
+    assert lines[-1] == "True"
