@@ -99,3 +99,5 @@ stream-limits, and `apply_scheduler_defaults`, leave it alone. A value you have 
 you pass `override=True`. The runtime reads the variable when it loads, which for numba is
 at its first parallel call, so call the function before that. The result says when a runtime
 was already loaded (Linux), in which case the variable is set for child processes only.
+On Windows, numba uses Microsoft's OpenMP runtime, which does not read the variable, so the
+call changes nothing there.

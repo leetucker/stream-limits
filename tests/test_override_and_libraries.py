@@ -264,6 +264,8 @@ def test_wait_policy_takes_effect_when_numba_is_imported_first():
         pytest.skip("numba's OpenMP threading layer is not in use")
     # "late" is only detectable on Linux (it reads /proc/self/maps)
     assert r.stdout.split()[0] == ("False" if sys.platform.startswith("linux") else "None")
+    if sys.platform == "win32":
+        pytest.skip("Microsoft's OpenMP runtime does not read or display OMP_WAIT_POLICY")
     assert "OMP_WAIT_POLICY = 'PASSIVE'" in r.stderr
 
 

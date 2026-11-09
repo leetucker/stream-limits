@@ -10,7 +10,8 @@
   the default here) fixed this in diff-stream: fits ran 2% to 15% faster on a
   cloud server, and on a laptop with mixed cores 8 threads went from slower than
   one thread to faster. Programs with a few long parallel calls, such as
-  hdfe-stream and logit-stream, run the same either way.
+  hdfe-stream and logit-stream, run the same either way. On Windows, where
+  numba's OpenMP runtime ignores the setting, the call changes nothing.
 - **A package has to ask for it.** Importing stream-limits, and
   `apply_scheduler_defaults`, still change nothing, because the setting reaches
   every OpenMP library in the process (BLAS builds on OpenMP, scikit-learn,

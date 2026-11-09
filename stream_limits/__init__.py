@@ -813,7 +813,9 @@ def set_openmp_wait_policy(policy: str = "passive", *, override: bool = False,
     few, long parallel regions (hdfe-stream's solvers, logit-stream's fits)
     is unaffected, and this function is not called by importing the package:
     a package opts in, since the setting reaches every OpenMP library in the
-    process (BLAS builds on OpenMP, scikit-learn, LightGBM).
+    process (BLAS builds on OpenMP, scikit-learn, LightGBM). Microsoft's OpenMP
+    runtime, the one numba uses on Windows, does not read the variable, so there
+    the call changes nothing.
 
     A value the user has set is left alone unless `override`. The runtime reads
     the variable once, when it loads (numba loads its OpenMP layer at the first
